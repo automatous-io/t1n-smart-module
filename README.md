@@ -163,6 +163,13 @@ Door ajar sensors are exposed to Home Assistant as `binary_sensor` with `device_
 ### Initial Proof of Concept
 
 ![Intial POC - Breadboard](media/photos/t1n-smart-module-initial-breadboard.png)
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=ZXVNMz0idC0">
+    <img src="https://img.youtube.com/vi/ZXVNMz0idC0/maxresdefault.jpg" width="700">
+  </a>
+</p>
+
+<p align="center"><sub>Tap phone → OEM locks actuate → state sync</sub></p>
 
 ### Enclosure
 
