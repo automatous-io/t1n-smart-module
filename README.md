@@ -1,6 +1,6 @@
 # T1N Smart Module
 
-Native Apple HomeKey + HomeKit NFC enabled smart lock system for the T1N series Sprinter that reads real lock state from the factory CTM. Optional integration into Home Assistant to read driver/passenger door ajar states for additional automation. Local and remote lock capability anywhere your van gets internet - all from your favorite Apple device.
+Native Apple HomeKey + HomeKit NFC enabled smart lock system for the T1N series Sprinter that reads real lock state from the factory CTM. Optional integration into Home Assistant to mirror door ajar states for additional automation. Local and remote lock capability anywhere your van gets internet - all from your favorite Apple device.
 
 Long live the million mile Sprinter!
 
@@ -10,9 +10,9 @@ Long live the million mile Sprinter!
 
 ## Why
 
-Factory T1N fobs are unreliable with zero lock-state feedback. Aftermarket kits aren't any better.
+Factory T1N fobs are unreliable with zero lock-state feedback. Aftermarket kits aren't any better. 
 
-This module taps the CTM's LED driver lines to know true lock/door ajar states, and pulses the factory switch inputs to control locks. The CTM doesn't know the difference, leaving oem logic and functionality 100% intact. This also costs way less than replacing the lackluster fobs and can be entirely integrated easily into your smart van.
+This costs a fraction of what a replacement fob does and can be integrated easily into your van, allowing for multiple smart options that far surpass the shortcomings of the original factory system.
 
 ---
 
@@ -20,13 +20,14 @@ This module taps the CTM's LED driver lines to know true lock/door ajar states, 
 
 - **Apple HomeKey** — tap iPhone or Apple Watch on the NFC reader to lock/unlock, even in Express Mode when Apple device is 'dead'
 - **Native HomeKit** via [HAP-ESPHome](https://github.com/rednblkx/HAP-ESPHome)
-- **Siri Enabled** - ask Siri to toggle the locks using just your voice
-- **Home Assistant** compatible for optional door sensor integration into HomeKit
-- **True lock-state detection** — PC817 optocouplers read CTM LED sense lines (galvanically isolated)
+- **Siri enabled** - ask Siri to toggle the locks using just your voice
+- **Home Assistant** compatible for optional door ajar sensor integration into Apple Home as HomeKit accessory
+- **True lock/door ajar - state detection** — PC817 optocouplers read CTM LED sense lines (galvanically isolated)
 - **Independent Driver Door & Passenger Door control**
 - **Reversible install** — Cat6/RJ45, terminal block to master lock switch interconnect, remove in minutes
 - **OTA updates** via ESPHome
-- **Remote capable** — operates from anywhere the van has internet
+- **Remote capable** — operates from anywhere the van has internet, but not required for local control
+- **Powered via aux battery** - zero chance of draining your engine battery
 
 ---
 
@@ -52,11 +53,11 @@ DASH MODULE
 │   │  Terminal    │──► W/Y  → Driver Door lock trigger → CTM     │
 │   │  Block       │──► W/R  → Passenger Door lock trigger → CTM  │
 │   │  Connections │◄── W/B  ← Driver Door LED sense ← CTM        │
-│   │              │◄── W/DG ← Passenger Door LED sense ← CTM     │
-│   │ + -          │ ACC1 (unused)                                │
-│   └──────────────┘ ACC2 (unused)                                │
-│   ◄── + 12V → 5V buck converter + 2A fuse                       │
-|   ──► - 5V buck converter + chassis GND                         |
+│   │ +            │◄── W/DG ← Passenger Door LED sense ← CTM     │
+│   │ -            │ ACC1 (unused spare)                          │
+│   └──────────────┘ ACC2 (unused spare)                          │
+│   + Aux 5V buck converter + 2A fuse                             │
+|   - Aux 5V buck converter + chassis GND                         |
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -97,7 +98,7 @@ Runs every 250ms. Each door evaluated independently.
 ![Apple Home — Driver Door Unlocked, Passenger Door Unlocked](media/photos/t1n-smart-module-home-unlocked.png)
 ![MLS — no LEDs, unlocked](media/photos/t1n-smart-module-mls-unlocked.png)
 
-### Passenger Door Open (Door Ajar via Home Assistant as binary sensor, Passenger LED Blinking)
+### Passenger Door Open (Door ajar via Home Assistant as binary sensor, Passenger LED blinking)
 
 ![Apple Home — Driver Door Closed, Passenger Door Open](media/photos/t1n-smart-module-home-unlocked-pass-open.png)
 ![MLS — bottom LED on, passenger door ajar](media/photos/t1n-smart-module-mls-unlocked-pass-open.png)
@@ -112,7 +113,7 @@ Runs every 250ms. Each door evaluated independently.
 | PN532 NFC (SPI) | 1 | HomeKey |
 | PC817 Optocoupler | 2 | LED sense isolation |
 | 2N2222A NPN | 2 | Lock pulse output |
-| 1k Resistor | 2 | Current limiting, optocoupler |
+| 1k Resistor | 2 | Current limiting, octocoupler  |
 | 2.2k Resistor | 2 | Current limiting, transistor |
 | Cat6 RJ45 Jack | 2 | Interconnect |
 | 12V→5V Buck | 1 | Power |
@@ -153,11 +154,15 @@ Runs every 250ms. Each door evaluated independently.
 | **Driver Door** | Yes | Yes |
 | **Passenger Door** | Yes | No |
 
-Door ajar sensors for both doors are exposed to Home Assistant as `binary_sensor` with `device_class: door` and are detected as a door being open or closed. Passenger, slider, and cargo doors are all connected and considered passenger.
+Door ajar sensors are exposed to Home Assistant as `binary_sensor` with `device_class: door` and are detected as a door being open or closed. Passenger, slider, and cargo doors are all connected and considered passenger.
 
 ---
 
 ## Prototype V1
+
+### Initial Proof of Concept
+
+![Intial POC - Breadboard](media/photos/t1n-smart-module-initial-breadboard.png)
 
 ### Enclosure
 
@@ -171,7 +176,7 @@ Two 3D-printed enclosures: an angled dash module with NFC face and magnetic lid,
 
 ![Enclosure — magnetic lid removed, embedded magnets](media/photos/t1n-smart-module-enclosure-proto-v1-4.png)
 
-### Board
+### Modular Perfboard
 
 ![PN532 NFC module with ribbon cable to ESP32-C6](media/photos/t1n-smart-module-board-proto-v1-1.png)
 
@@ -179,7 +184,7 @@ Two 3D-printed enclosures: an angled dash module with NFC face and magnetic lid,
 
 ![Assembled stack — ESP32-C6 mounted on interface board](media/photos/t1n-smart-module-board-proto-v1-3.png)
 
-### Installed
+### Van Installation
 
 ![Interface box installed behind center console](media/photos/t1n-smart-module-proto-v1-console-install.png)
 
@@ -187,15 +192,12 @@ Two 3D-printed enclosures: an angled dash module with NFC face and magnetic lid,
 
 ![Clean install — full cab view](media/photos/t1n-smart-module-proto-v1-clean-install.png)
 
-### Breadboard Origins
-
-![Initial breadboard prototype](media/photos/t1n-smart-module-initial-breadboard.png)
-
 ---
 
 ## Flashing
 
 ```bash
+gh repo clone automatous-io/t1n-smart-module
 cd firmware
 cp secrets.yaml.example secrets.yaml   # fill in your credentials
 esphome run t1n_smart_module.yaml
@@ -209,6 +211,7 @@ Pair in Apple Home with setup code `159-35-728`.
 
 - [ESPHome](https://esphome.io/)
 - [HAP-ESPHome](https://github.com/rednblkx/HAP-ESPHome) — HomeKit + HomeKey
+- [Apple Home Hub](https://support.apple.com/en-us/102557)
 - [Home Assistant](https://www.home-assistant.io/) (optional)
 
 ---
