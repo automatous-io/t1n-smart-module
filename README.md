@@ -113,7 +113,7 @@ Runs every 250ms. Each door evaluated independently.
 | PN532 NFC (SPI) | 1 | HomeKey |
 | PC817 Optocoupler | 2 | LED sense isolation |
 | 2N2222A NPN | 2 | Lock pulse output |
-| 1k Resistor | 2 | Current limiting, octocoupler  |
+| 1k Resistor | 2 | Current limiting, optocoupler  |
 | 2.2k Resistor | 2 | Current limiting, transistor |
 | Cat6 RJ45 Jack | 2 | Interconnect |
 | 12V→5V Buck | 1 | Power |
