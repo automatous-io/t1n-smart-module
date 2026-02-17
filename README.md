@@ -160,7 +160,7 @@ Door ajar sensors are exposed to Home Assistant as `binary_sensor` with `device_
 
 ## 3D-Printable Enclosures
 
-Two enclosures designed in Fusion 360 — an angled dash module with NFC face and magnetic lid, and a compact cabin interface box. Both use 8x3mm neodymium round magnets for the door latch. No supports needed if your printer handles bridging well. ASA recommended for in-vehicle heat and UV resistance.
+Two enclosures designed in Fusion 360 — an angled dash module with NFC face and magnetic lid that uses 8x3mm neodymium round magnets for the door latch, and a compact cabin interface box that does not require magnets. No supports needed if your printer handles bridging well. ASA recommended for in-vehicle heat and UV resistance.
 
 > Port locations will vary by installation — this is a proof of concept. STEP files are included for modification. See [`cad/`](cad/) for print-ready STLs and full details.
 
