@@ -1,0 +1,435 @@
+esphome:
+  name: t1n-smart-module
+  friendly_name: T1N_SMART_MODULE
+
+esp32:
+  board: esp32-c6-devkitc-1
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_COMPILER_OPTIMIZATION_SIZE: y
+      CONFIG_LWIP_MAX_SOCKETS: "16"
+      CONFIG_MBEDTLS_HKDF_C: y
+
+# HAP-ESPHome (HomeKit + HomeKey)
+external_components:
+  source: github://rednblkx/HAP-ESPHome@main
+  refresh: 0s
+
+# ----------------------------
+# HomeKit base / pairing
+# ----------------------------
+homekit_base:
+  meta:
+    name: "t1n-smart-module"
+    manufacturer: "automatous-io"
+    model: "mabel-v1"
+    serial_number: "10346826"
+    fw_rev: "1.0"
+  setup_code: "159-35-728"
+  setup_id: "ES32"
+
+button:
+  - platform: homekit_base
+    factory_reset:
+      name: "Reset HomeKit pairings"
+
+# ----------------------------
+# PN532 SPI
+# ----------------------------
+spi:
+  clk_pin: GPIO19
+  miso_pin: GPIO20
+  mosi_pin: GPIO18
+
+pn532_spi:
+  id: nfc_spi_module
+  cs_pin: GPIO21
+  update_interval: 100ms
+
+# ----------------------------
+# Globals
+# ----------------------------
+globals:
+  # shared cooldown for any pulse (prevents double-taps / repeat triggers)
+  - id: last_pulse_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+  # Persisted lock beliefs (used when CTM asleep / both dark)
+  - id: driver_locked
+    type: bool
+    restore_value: yes
+    initial_value: "true"
+
+  - id: passenger_locked
+    type: bool
+    restore_value: yes
+    initial_value: "true"
+
+  # Tracks the last time each LED was seen ON (solid or blink)
+  - id: driver_last_seen_on_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+  - id: passenger_last_seen_on_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+# ----------------------------
+# PC817 opto inputs
+# GPIO22 = Driver Door Ajar Indicator sense
+# GPIO23 = Passenger Door Ajar Indicator sense
+# Assumes opto pulls GPIO LOW when LED is ON → inverted:true
+# ----------------------------
+binary_sensor:
+  - platform: gpio
+    id: driver_led_raw
+    pin:
+      number: GPIO22
+      mode: INPUT_PULLUP
+      inverted: true
+    internal: true
+    filters:
+      - delayed_on: 20ms
+      - delayed_off: 40ms
+
+  - platform: gpio
+    id: passenger_led_raw
+    pin:
+      number: GPIO23
+      mode: INPUT_PULLUP
+      inverted: true
+    internal: true
+    filters:
+      - delayed_on: 20ms
+      - delayed_off: 40ms
+
+  # "Solid" = continuously ON for >= 500ms
+  - platform: template
+    id: driver_solid
+    internal: true
+    lambda: |-
+      return id(driver_led_raw).state;
+    filters:
+      - delayed_on: 500ms
+      - delayed_off: 200ms
+
+  - platform: template
+    id: passenger_solid
+    internal: true
+    lambda: |-
+      return id(passenger_led_raw).state;
+    filters:
+      - delayed_on: 500ms
+      - delayed_off: 200ms
+
+  # "Blink" = any edge within last 1500ms
+  - platform: template
+    id: driver_blink
+    internal: true
+    lambda: |-
+      static bool last = false;
+      static uint32_t last_edge = 0;
+      bool cur = id(driver_led_raw).state;
+      uint32_t now = millis();
+      if (cur != last) {
+        last = cur;
+        last_edge = now;
+      }
+      return (last_edge != 0) && ((now - last_edge) < 1500);
+    filters:
+      - delayed_off: 1500ms
+
+  - platform: template
+    id: passenger_blink
+    internal: true
+    lambda: |-
+      static bool last = false;
+      static uint32_t last_edge = 0;
+      bool cur = id(passenger_led_raw).state;
+      uint32_t now = millis();
+      if (cur != last) {
+        last = cur;
+        last_edge = now;
+      }
+      return (last_edge != 0) && ((now - last_edge) < 1500);
+    filters:
+      - delayed_off: 1500ms
+
+  # ----------------------------
+  # Door ajar sensors (HA-exposed, device_class: door)
+  # BLINK = door physically open, not BLINK = door closed
+  # ----------------------------
+  - platform: template
+    name: "Driver Door"
+    device_class: door
+    lambda: |-
+      return id(driver_blink).state;
+
+  - platform: template
+    name: "Passenger Door"
+    device_class: door
+    lambda: |-
+      return id(passenger_blink).state;
+
+# ----------------------------
+# HA-only diagnostics (NOT exposed to Apple Home)
+# These show up in Home Assistant because they have "name:"
+# ----------------------------
+text_sensor:
+  - platform: template
+    name: "Driver LED Status"
+    update_interval: 250ms
+    lambda: |-
+      if (!id(driver_led_raw).state) return std::string("OFF");
+      if (id(driver_blink).state) return std::string("BLINK");
+      if (id(driver_solid).state) return std::string("SOLID");
+      return std::string("ON");
+
+  - platform: template
+    name: "Passenger LED Status"
+    update_interval: 250ms
+    lambda: |-
+      if (!id(passenger_led_raw).state) return std::string("OFF");
+      if (id(passenger_blink).state) return std::string("BLINK");
+      if (id(passenger_solid).state) return std::string("SOLID");
+      return std::string("ON");
+
+  - platform: template
+    name: "Lock Truth"
+    update_interval: 250ms
+    lambda: |-
+      bool drv_on = id(driver_led_raw).state || id(driver_blink).state;
+      bool pax_on = id(passenger_led_raw).state || id(passenger_blink).state;
+
+      if (!drv_on && !pax_on) {
+        return std::string("SLEEP (hold last)");
+      }
+
+      std::string drv_st, pax_st;
+
+      // Driver side
+      if (id(driver_solid).state) drv_st = "LOCKED";
+      else if (id(driver_blink).state) drv_st = "AJAR";
+      else drv_st = "UNLOCKED";
+
+      // Passenger side
+      if (id(passenger_solid).state) pax_st = "LOCKED";
+      else if (id(passenger_blink).state) pax_st = "AJAR";
+      else pax_st = "UNLOCKED";
+
+      return "D:" + drv_st + " P:" + pax_st;
+
+# ----------------------------
+# MOSFET outputs
+# GPIO1 = Driver Door pulse MOSFET
+# GPIO2 = Passenger Door pulse MOSFET
+# HIGH = ON
+# ----------------------------
+switch:
+  - platform: gpio
+    id: driver_pulse_mosfet
+    pin:
+      number: GPIO1
+      inverted: false
+    restore_mode: ALWAYS_OFF
+    internal: true
+
+  - platform: gpio
+    id: passenger_pulse_mosfet
+    pin:
+      number: GPIO2
+      inverted: false
+    restore_mode: ALWAYS_OFF
+    internal: true
+
+  # 500ms momentary pulse w/ shared cooldown
+  - platform: template
+    id: driver_pulse
+    internal: true
+    turn_on_action:
+      - lambda: |-
+          const uint32_t now = millis();
+          if (id(last_pulse_ms) && (now - id(last_pulse_ms)) < 1200) {
+            ESP_LOGW("PULSE", "driver_pulse suppressed (cooldown)");
+            return;
+          }
+          id(last_pulse_ms) = now;
+      - switch.turn_on: driver_pulse_mosfet
+      - delay: 500ms
+      - switch.turn_off: driver_pulse_mosfet
+      - switch.turn_off: driver_pulse
+
+  # 500ms momentary pulse w/ shared cooldown
+  - platform: template
+    id: passenger_pulse
+    internal: true
+    turn_on_action:
+      - lambda: |-
+          const uint32_t now = millis();
+          if (id(last_pulse_ms) && (now - id(last_pulse_ms)) < 1200) {
+            ESP_LOGW("PULSE", "passenger_pulse suppressed (cooldown)");
+            return;
+          }
+          id(last_pulse_ms) = now;
+      - switch.turn_on: passenger_pulse_mosfet
+      - delay: 500ms
+      - switch.turn_off: passenger_pulse_mosfet
+      - switch.turn_off: passenger_pulse
+
+# ----------------------------
+# Locks (state driven by truth loop + last-known hold)
+# Names: "Driver Door" and "Passenger Door"
+# ----------------------------
+lock:
+  - platform: template
+    id: driver_lock
+    name: "Driver Door"
+    lambda: |-
+      return id(driver_locked) ? LOCK_STATE_LOCKED : LOCK_STATE_UNLOCKED;
+    lock_action:
+      - switch.turn_on: driver_pulse
+    unlock_action:
+      - switch.turn_on: driver_pulse
+
+  - platform: template
+    id: passenger_lock
+    name: "Passenger Door"
+    lambda: |-
+      return id(passenger_locked) ? LOCK_STATE_LOCKED : LOCK_STATE_UNLOCKED;
+    lock_action:
+      - switch.turn_on: passenger_pulse
+    unlock_action:
+      - switch.turn_on: passenger_pulse
+
+# ----------------------------
+# HomeKey + HomeKit exposure
+# - Only the two locks are exposed to Apple Home via HAP-ESPHome
+# - LED diagnostics and door ajar sensors stay HA-only (not referenced here)
+# ----------------------------
+homekit:
+  lock:
+    # Driver Door: HomeKey enabled
+    - id: driver_lock
+      nfc_id: nfc_spi_module
+      hk_hw_finish: "SILVER"
+      on_hk_success:
+        then:
+          - logger.log: "HOMEKEY Auth OK -> driver_pulse"
+          - switch.turn_on: driver_pulse
+      on_hk_fail:
+        then:
+          - logger.log: "HOMEKEY Auth FAIL"
+
+    # Passenger Door: normal HomeKit lock tile (no HomeKey)
+    - id: passenger_lock
+      hk_hw_finish: "BLACK"
+
+# ----------------------------
+# TRUTH LOOP
+# Per-LED independent logic:
+#   SOLID → LOCKED (door locked + closed)
+#   BLINK → UNLOCKED (door is physically open/ajar, therefore unlocked)
+#   OFF + other LED active → UNLOCKED (CTM awake, this side unlocked)
+#   OFF + recently was ON (< 5s) → UNLOCKED (just transitioned off = unlock event)
+#   OFF + both OFF for > 5s → SLEEP (hold last known state)
+# ----------------------------
+interval:
+  - interval: 250ms
+    then:
+      - lambda: |-
+          const uint32_t now = millis();
+          const uint32_t RECENT_MS = 5000;
+
+          bool drv_raw = id(driver_led_raw).state;
+          bool pax_raw = id(passenger_led_raw).state;
+          bool drv_solid = id(driver_solid).state;
+          bool pax_solid = id(passenger_solid).state;
+          bool drv_blink = id(driver_blink).state;
+          bool pax_blink = id(passenger_blink).state;
+
+          // Track last-seen-on timestamps
+          if (drv_raw || drv_blink) id(driver_last_seen_on_ms) = now;
+          if (pax_raw || pax_blink) id(passenger_last_seen_on_ms) = now;
+
+          bool drv_active = drv_raw || drv_blink;
+          bool pax_active = pax_raw || pax_blink;
+
+          // --- DRIVER ---
+          bool new_driver = id(driver_locked);
+          if (drv_solid) {
+            // SOLID = locked + closed
+            new_driver = true;
+          } else if (drv_blink) {
+            // BLINK = door ajar (physically open), therefore unlocked
+            new_driver = false;
+          } else if (!drv_active) {
+            // LED is OFF
+            if (pax_active) {
+              // Other side is awake, so CTM is not asleep — this side is unlocked
+              new_driver = false;
+            } else if (id(driver_last_seen_on_ms) != 0 && (now - id(driver_last_seen_on_ms)) < RECENT_MS) {
+              // Recently went dark = unlock transition
+              new_driver = false;
+            }
+            // else: both OFF for a long time = CTM sleep, hold last known state
+          }
+
+          if (new_driver != id(driver_locked)) {
+            id(driver_locked) = new_driver;
+            id(driver_lock).publish_state(new_driver ? LOCK_STATE_LOCKED : LOCK_STATE_UNLOCKED);
+            ESP_LOGI("TRUTH", "Driver -> %s", new_driver ? "LOCKED" : "UNLOCKED");
+          }
+
+          // --- PASSENGER ---
+          bool new_passenger = id(passenger_locked);
+          if (pax_solid) {
+            // SOLID = locked + closed
+            new_passenger = true;
+          } else if (pax_blink) {
+            // BLINK = door ajar (physically open), therefore unlocked
+            new_passenger = false;
+          } else if (!pax_active) {
+            // LED is OFF
+            if (drv_active) {
+              // Other side is awake, so CTM is not asleep — this side is unlocked
+              new_passenger = false;
+            } else if (id(passenger_last_seen_on_ms) != 0 && (now - id(passenger_last_seen_on_ms)) < RECENT_MS) {
+              // Recently went dark = unlock transition
+              new_passenger = false;
+            }
+            // else: both OFF for a long time = CTM sleep, hold last known state
+          }
+
+          if (new_passenger != id(passenger_locked)) {
+            id(passenger_locked) = new_passenger;
+            id(passenger_lock).publish_state(new_passenger ? LOCK_STATE_LOCKED : LOCK_STATE_UNLOCKED);
+            ESP_LOGI("TRUTH", "Passenger -> %s", new_passenger ? "LOCKED" : "UNLOCKED");
+          }
+
+# ----------------------------
+# ESPhome Plumbing
+# ----------------------------
+logger:
+  level: DEBUG
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_platform_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "T1N-Smart-Module"
+    password: !secret wifi_ssid_ap_password
+
+captive_portal:
