@@ -26,7 +26,7 @@ Interface box that houses the perfboard, RJ45 jack, and terminal block connectio
 |---------|---------------|
 | **Material** | ASA (recommended for heat and UV resistance in a vehicle) |
 | **Supports** | None required — bridging-friendly design |
-| **Magnets** | 8x3mm neodymium round magnets for door latch |
+| **Magnets (Door Module only)** | 8x3mm neodymium round magnets for magnetic lid latch |
 
 > Port locations will vary by installation — this is a proof of concept. Modify the STEP files in Fusion 360 to suit your build.
 
