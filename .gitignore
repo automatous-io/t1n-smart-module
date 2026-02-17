@@ -1,0 +1,15 @@
+# ESPHome build artifacts
+.esphome/
+
+# Secrets — never commit credentials
+secrets.yaml
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
